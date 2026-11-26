@@ -220,6 +220,47 @@ All 14 implementations strictly adhere to the exact same Go contract (every `bla
 
 ---
 
+## .NET 10.0.15 vs .NET 11.0.0 Comparison (Separate Hardware)
+
+A focused **64-run** comparison of **`.NET 10.0.15`** vs **`.NET 11.0.0`** (`jit`, `aot`, `blazing`, `blazing-aot`) was executed on a different desktop host, so its raw dataset is stored separately in [`results/dotnet10-vs-dotnet11/matrix.tsv`](results/dotnet10-vs-dotnet11/matrix.tsv) rather than merged into the Ryzen 5 PRO 6650U matrix above.
+
+### Host Hardware & Environment
+| Component | Specification |
+| --- | --- |
+| **CPU** | AMD Ryzen 5 7600 6-Core Processor (`x86_64`, 6 cores / 12 threads, up to 5.17 GHz) |
+| **RAM** | 30 GiB usable |
+| **OS / Kernel** | CachyOS — `Linux 7.3.5-2-cachyos #1 SMP PREEMPT_DYNAMIC x86_64` |
+| **Runtimes** | `mcr.microsoft.com/dotnet/sdk:10.0` (`.NET 10.0.15`) vs `mcr.microsoft.com/dotnet/sdk:11.0` (`.NET 11.0.0`) |
+| **Workload** | `50 VUs`, `10s` cold (`0–10s`) + `10s` warmup + `10s` warm, `0.00%` errors, RAM-backed `postgres:18.1` |
+
+### 2 CPU (`--cpus=2`)
+| Target | `GET` Cold → Warm (RPS) | `GET` Warm `avg` / `p99` | `POST` Cold → Warm (RPS) | `POST` Warm `avg` / `p99` | App RAM (`GET` / `POST` warm) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **dotnet10-blazing** | `122,106 → 134,685` | `0.34 / 1.44 ms` | `56,658 → 63,836` | `0.74 / 2.15 ms` | `22.1 / 37.5 MB` |
+| **dotnet11-blazing** | **`129,376 → 138,880`** (`+3.1%` warm) | `0.33 / 1.40 ms` | `53,178 →` **`67,389`** (`+5.6%` warm) | `0.70 / 2.10 ms` | `22.7 / 40.2 MB` |
+| **dotnet10-blazing-aot** | `130,965 → 133,431` | `0.35 / 1.45 ms` | `61,805 → 55,178` | `0.86 / 2.97 ms` | `12.4 / 17.6 MB` |
+| **dotnet11-blazing-aot** | **`136,564 → 137,085`** (`+2.7%` warm) | `0.34 / 1.37 ms` | **`64,060 → 63,902`** (`+15.8%` warm) | `0.74 / 2.17 ms` | `11.7 / 19.6 MB` |
+| **dotnet10-aot** | **`126,697 → 126,452`** | `0.37 / 1.45 ms` | **`55,157 → 55,529`** | `0.86 / 2.60 ms` | `17.3 / 22.7 MB` |
+| **dotnet11-aot** | `68,141 → 102,319` | `0.46 / 2.10 ms` | `51,652 → 55,447` | `0.86 / 2.48 ms` | `15.0 / 26.5 MB` |
+| **dotnet10-jit** | **`119,984 → 127,825`** | `0.36 / 1.43 ms` | **`44,218 → 59,023`** | `0.80 / 2.26 ms` | `31.6 / 43.5 MB` |
+| **dotnet11-jit** | `55,435 → 66,063` | `0.72 / 3.59 ms` | `33,689 → 29,218` | `1.65 / 5.68 ms` | `31.8 / 49.2 MB` |
+
+### 1 CPU (`--cpus=1`)
+| Target | `GET` Cold → Warm (RPS) | `GET` Warm `avg` / `p99` | `POST` Cold → Warm (RPS) | `POST` Warm `avg` / `p99` | App RAM (`GET` / `POST` warm) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **dotnet10-blazing-aot** | `112,962 → 108,808` | `0.43 / 1.53 ms` | `47,695 →` **`50,552`** | `0.95 / 2.36 ms` | `38.0 / 32.9 MB` |
+| **dotnet11-blazing-aot** | **`116,176 → 116,374`** (`+7.0%` warm) | `0.40 / 1.42 ms` | **`49,570`** `→ 49,425` | `0.97 / 2.55 ms` | `28.1 / 32.7 MB` |
+| **dotnet10-blazing** | **`92,777 → 113,184`** | `0.41 / 1.40 ms` | **`31,158 → 44,608`** | `1.08 / 2.43 ms` | `35.2 / 53.2 MB` |
+| **dotnet11-blazing** | `63,503 → 68,081` | `0.71 / 1.76 ms` | `27,866 → 25,069` | `1.96 / 3.37 ms` | `37.1 / 47.2 MB` |
+| **dotnet10-aot** | **`107,854 → 104,263`** | `0.45 / 1.40 ms` | **`39,389 → 39,773`** | `1.22 / 2.93 ms` | `35.5 / 32.4 MB` |
+| **dotnet11-aot** *(matrix)* | `56,315 → 57,036` *(51.6% CPU)* | `0.84 / 2.99 ms` | `21,398 → 21,650` | `2.24 / 5.82 ms` | `28.3 / 33.0 MB` |
+| **dotnet10-jit** | **`71,913 → 93,532`** | `0.51 / 1.35 ms` | **`16,204 → 19,594`** | `2.51 / 49.21 ms` | `44.6 / 52.6 MB` |
+| **dotnet11-jit** | `56,658 → 46,927` | `1.03 / 4.14 ms` | `10,570 → 10,665` | `4.62 / 36.79 ms` | `44.4 / 46.7 MB` |
+
+> **Note on `1 CPU` `dotnet11-aot` & `dotnet11-jit` (`GET`)**: In the 64-run matrix, `dotnet11-aot` `1 CPU` `GET` only utilized `51.6%` CPU (`57,036 RPS`). An isolated `5s` warm `GET` recheck (`3s` warmup) on `1 CPU` showed **`dotnet11-aot` at `114,157 RPS`** (`88.1%` CPU, `0.41 ms` avg) vs **`dotnet10-aot` at `108,775 RPS`** (`87.0%` CPU, `0.43 ms` avg, **+4.9%**), while `dotnet11-jit` remained behind `dotnet10-jit` (`59,752` vs `72,111 RPS`).
+
+---
+
 ## How to Run
 
 ### Prerequisites

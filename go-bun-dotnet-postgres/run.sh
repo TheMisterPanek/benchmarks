@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NETWORK="${NETWORK:-bench275}"
 CPU_PROFILES="${CPU_PROFILES:-1 2}"
-TARGETS="${TARGETS:-go rust-axum bun-compile bun-nocompile dotnet8-jit dotnet8-aot dotnet10-jit dotnet10-aot dotnet10-blazing dotnet10-blazing-aot java25-blazing java25-blazing-aot kotlin24-blazing kotlin24-blazing-aot}"
+TARGETS="${TARGETS:-go rust-axum bun-compile bun-nocompile dotnet8-jit dotnet8-aot dotnet10-jit dotnet10-aot dotnet10-blazing dotnet10-blazing-aot dotnet11-jit dotnet11-aot dotnet11-blazing dotnet11-blazing-aot java25-blazing java25-blazing-aot kotlin24-blazing kotlin24-blazing-aot}"
 MODES="${MODES:-get post}"
 PHASES="${PHASES:-cold,warm}"
 K6_VUS="${K6_VUS:-50}"
@@ -20,22 +20,33 @@ RESULTS_FILE="$RESULTS_DIR/matrix.tsv"
 mkdir -p "$RESULTS_DIR"
 printf "CPU\tPHASE\tTARGET\tMODE\tRPS\tAVG\tP50\tP90\tP95\tP99\tERR\tAPP_CPU\tPEAK_CPU\tAPP_RAM\tPG_CPU\n" > "$RESULTS_FILE"
 
+should_build() {
+  case " $TARGETS " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 if [ "$SKIP_BUILD" != "1" ]; then
-  echo ">>> Building all container images with Podman..."
-  podman build -t localhost/go-app-275:local "$ROOT_DIR/go-app"
-  podman build -t localhost/rust-axum-275:local "$ROOT_DIR/rust-axum-app"
-  podman build -t localhost/bun-compile-275:local -f "$ROOT_DIR/bun-app/Dockerfile" "$ROOT_DIR/bun-app"
-  podman build -t localhost/bun-nocompile-275:local -f "$ROOT_DIR/bun-app/Dockerfile.nocompile" "$ROOT_DIR/bun-app"
-  podman build -t localhost/dotnet8-jit-275:local --build-arg DOTNET_CHANNEL=8.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.jit" "$ROOT_DIR/dotnet-app"
-  podman build -t localhost/dotnet8-aot-275:local --build-arg DOTNET_CHANNEL=8.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.aot" "$ROOT_DIR/dotnet-app"
-  podman build -t localhost/dotnet10-jit-275:local --build-arg DOTNET_CHANNEL=10.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.jit" "$ROOT_DIR/dotnet-app"
-  podman build -t localhost/dotnet10-aot-275:local --build-arg DOTNET_CHANNEL=10.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.aot" "$ROOT_DIR/dotnet-app"
-  podman build -t localhost/dotnet10-blazing-275:local "$ROOT_DIR/dotnet-blazing-app"
-  podman build -t localhost/dotnet10-blazing-aot-275:local -f "$ROOT_DIR/dotnet-blazing-app/Dockerfile.aot" "$ROOT_DIR/dotnet-blazing-app"
-  podman build -t localhost/java25-blazing-275:local "$ROOT_DIR/java-blazing-app"
-  podman build -t localhost/java25-blazing-aot-275:local -f "$ROOT_DIR/java-blazing-app/Dockerfile.aot" "$ROOT_DIR/java-blazing-app"
-  podman build -t localhost/kotlin24-blazing-275:local "$ROOT_DIR/kotlin-blazing-app"
-  podman build -t localhost/kotlin24-blazing-aot-275:local -f "$ROOT_DIR/kotlin-blazing-app/Dockerfile.aot" "$ROOT_DIR/kotlin-blazing-app"
+  echo ">>> Building container images for selected targets with Podman..."
+  should_build "go" && podman build -t localhost/go-app-275:local "$ROOT_DIR/go-app"
+  should_build "rust-axum" && podman build -t localhost/rust-axum-275:local "$ROOT_DIR/rust-axum-app"
+  should_build "bun-compile" && podman build -t localhost/bun-compile-275:local -f "$ROOT_DIR/bun-app/Dockerfile" "$ROOT_DIR/bun-app"
+  should_build "bun-nocompile" && podman build -t localhost/bun-nocompile-275:local -f "$ROOT_DIR/bun-app/Dockerfile.nocompile" "$ROOT_DIR/bun-app"
+  should_build "dotnet8-jit" && podman build -t localhost/dotnet8-jit-275:local --build-arg DOTNET_CHANNEL=8.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.jit" "$ROOT_DIR/dotnet-app"
+  should_build "dotnet8-aot" && podman build -t localhost/dotnet8-aot-275:local --build-arg DOTNET_CHANNEL=8.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.aot" "$ROOT_DIR/dotnet-app"
+  should_build "dotnet10-jit" && podman build -t localhost/dotnet10-jit-275:local --build-arg DOTNET_CHANNEL=10.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.jit" "$ROOT_DIR/dotnet-app"
+  should_build "dotnet10-aot" && podman build -t localhost/dotnet10-aot-275:local --build-arg DOTNET_CHANNEL=10.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.aot" "$ROOT_DIR/dotnet-app"
+  should_build "dotnet10-blazing" && podman build -t localhost/dotnet10-blazing-275:local --build-arg DOTNET_CHANNEL=10.0 -f "$ROOT_DIR/dotnet-blazing-app/Dockerfile" "$ROOT_DIR/dotnet-blazing-app"
+  should_build "dotnet10-blazing-aot" && podman build -t localhost/dotnet10-blazing-aot-275:local --build-arg DOTNET_CHANNEL=10.0 -f "$ROOT_DIR/dotnet-blazing-app/Dockerfile.aot" "$ROOT_DIR/dotnet-blazing-app"
+  should_build "dotnet11-jit" && podman build -t localhost/dotnet11-jit-275:local --build-arg DOTNET_CHANNEL=11.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.jit" "$ROOT_DIR/dotnet-app"
+  should_build "dotnet11-aot" && podman build -t localhost/dotnet11-aot-275:local --build-arg DOTNET_CHANNEL=11.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.aot" "$ROOT_DIR/dotnet-app"
+  should_build "dotnet11-blazing" && podman build -t localhost/dotnet11-blazing-275:local --build-arg DOTNET_CHANNEL=11.0 -f "$ROOT_DIR/dotnet-blazing-app/Dockerfile" "$ROOT_DIR/dotnet-blazing-app"
+  should_build "dotnet11-blazing-aot" && podman build -t localhost/dotnet11-blazing-aot-275:local --build-arg DOTNET_CHANNEL=11.0 -f "$ROOT_DIR/dotnet-blazing-app/Dockerfile.aot" "$ROOT_DIR/dotnet-blazing-app"
+  should_build "java25-blazing" && podman build -t localhost/java25-blazing-275:local "$ROOT_DIR/java-blazing-app"
+  should_build "java25-blazing-aot" && podman build -t localhost/java25-blazing-aot-275:local -f "$ROOT_DIR/java-blazing-app/Dockerfile.aot" "$ROOT_DIR/java-blazing-app"
+  should_build "kotlin24-blazing" && podman build -t localhost/kotlin24-blazing-275:local "$ROOT_DIR/kotlin-blazing-app"
+  should_build "kotlin24-blazing-aot" && podman build -t localhost/kotlin24-blazing-aot-275:local -f "$ROOT_DIR/kotlin-blazing-app/Dockerfile.aot" "$ROOT_DIR/kotlin-blazing-app"
   podman build -t localhost/k6-bench-275:local "$ROOT_DIR/k6"
 fi
 
@@ -66,8 +77,8 @@ start_fresh_postgres() {
   for i in $(seq 1 60); do
     if podman exec bench-postgres pg_isready -U admin -d store >/dev/null 2>&1 && \
        podman exec bench-postgres psql -U admin -d store -tAc \
-         "SELECT count(*) FROM pg_tables WHERE tablename IN ('go_app','rust_axum_app','bun_app','dotnet8_jit_app','dotnet8_aot_app','dotnet10_jit_app','dotnet10_aot_app','dotnet10_blazing_app','java_blazing_app','kotlin_blazing_app')" 2>/dev/null | grep -q '^10$'; then
-      echo "PostgreSQL ready (fresh RAM-backed instance with all 10 tables)."
+         "SELECT count(*) FROM pg_tables WHERE tablename IN ('go_app','rust_axum_app','bun_app','dotnet8_jit_app','dotnet8_aot_app','dotnet10_jit_app','dotnet10_aot_app','dotnet10_blazing_app','dotnet11_jit_app','dotnet11_aot_app','dotnet11_blazing_app','java_blazing_app','kotlin_blazing_app')" 2>/dev/null | grep -q '^13$'; then
+      echo "PostgreSQL ready (fresh RAM-backed instance with all 13 tables)."
       return 0
     fi
     sleep 0.5
@@ -156,6 +167,30 @@ start_target() {
         -e APP_NAME=dotnet10-blazing-aot \
         -v "$ROOT_DIR/k6/configs/dotnet10-blazing-config.yaml:/app/config.yaml:ro,Z" \
         localhost/dotnet10-blazing-aot-275:local >/dev/null
+      ;;
+    dotnet11-jit)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=dotnet11-jit \
+        -v "$ROOT_DIR/k6/configs/dotnet11-jit-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/dotnet11-jit-275:local >/dev/null
+      ;;
+    dotnet11-aot)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=dotnet11-aot \
+        -v "$ROOT_DIR/k6/configs/dotnet11-aot-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/dotnet11-aot-275:local >/dev/null
+      ;;
+    dotnet11-blazing)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=dotnet11-blazing \
+        -v "$ROOT_DIR/k6/configs/dotnet11-blazing-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/dotnet11-blazing-275:local >/dev/null
+      ;;
+    dotnet11-blazing-aot)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=dotnet11-blazing-aot \
+        -v "$ROOT_DIR/k6/configs/dotnet11-blazing-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/dotnet11-blazing-aot-275:local >/dev/null
       ;;
     java25-blazing)
       podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \

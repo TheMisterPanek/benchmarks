@@ -1,0 +1,9 @@
+---
+appPort: 8080
+db:
+  user: dotnet11_jit_app
+  password: devops123
+  host: postgres
+  database: store
+  maxConnections: 100
+  table: dotnet11_jit_app
