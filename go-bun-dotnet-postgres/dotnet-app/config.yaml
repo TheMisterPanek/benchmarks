@@ -1,0 +1,9 @@
+---
+appPort: 8080
+db:
+  user: dotnet10_jit_app
+  password: devops123
+  host: localhost
+  database: store
+  maxConnections: 100
+  table: dotnet10_jit_app

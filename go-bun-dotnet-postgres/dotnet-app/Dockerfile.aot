@@ -1,0 +1,23 @@
+ARG DOTNET_CHANNEL=10.0
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_CHANNEL} AS build
+ARG DOTNET_CHANNEL=10.0
+WORKDIR /src
+
+RUN apt-get update && apt-get install -y --no-install-recommends clang zlib1g-dev && rm -rf /var/lib/apt/lists/*
+
+ENV TargetFramework=net${DOTNET_CHANNEL}
+ENV PublishAot=true
+
+COPY DotnetApp.csproj ./
+RUN dotnet restore
+
+COPY Program.cs ./
+RUN dotnet publish -c Release -o /app
+
+FROM mcr.microsoft.com/dotnet/runtime-deps:${DOTNET_CHANNEL}
+WORKDIR /app
+COPY --from=build /app/DotnetApp ./
+COPY config.yaml ./
+
+EXPOSE 8080
+ENTRYPOINT ["./DotnetApp"]

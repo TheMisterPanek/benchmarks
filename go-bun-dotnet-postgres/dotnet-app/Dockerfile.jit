@@ -1,0 +1,19 @@
+ARG DOTNET_CHANNEL=10.0
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_CHANNEL} AS build
+ARG DOTNET_CHANNEL=10.0
+ENV TargetFramework=net${DOTNET_CHANNEL}
+WORKDIR /src
+
+COPY DotnetApp.csproj ./
+RUN dotnet restore
+
+COPY Program.cs ./
+RUN dotnet publish -c Release -o /app --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_CHANNEL}
+WORKDIR /app
+COPY --from=build /app ./
+COPY config.yaml ./
+
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "DotnetApp.dll"]
