@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NETWORK="${NETWORK:-bench275}"
 CPU_PROFILES="${CPU_PROFILES:-1 2}"
-TARGETS="${TARGETS:-go bun-compile bun-nocompile dotnet8-jit dotnet8-aot dotnet10-jit dotnet10-aot}"
+TARGETS="${TARGETS:-go rust-axum bun-compile bun-nocompile dotnet8-jit dotnet8-aot dotnet10-jit dotnet10-aot dotnet10-blazing dotnet10-blazing-aot java25-blazing java25-blazing-aot kotlin24-blazing kotlin24-blazing-aot}"
 MODES="${MODES:-get post}"
 PHASES="${PHASES:-cold,warm}"
 K6_VUS="${K6_VUS:-50}"
@@ -23,12 +23,19 @@ printf "CPU\tPHASE\tTARGET\tMODE\tRPS\tAVG\tP50\tP90\tP95\tP99\tERR\tAPP_CPU\tPE
 if [ "$SKIP_BUILD" != "1" ]; then
   echo ">>> Building all container images with Podman..."
   podman build -t localhost/go-app-275:local "$ROOT_DIR/go-app"
+  podman build -t localhost/rust-axum-275:local "$ROOT_DIR/rust-axum-app"
   podman build -t localhost/bun-compile-275:local -f "$ROOT_DIR/bun-app/Dockerfile" "$ROOT_DIR/bun-app"
   podman build -t localhost/bun-nocompile-275:local -f "$ROOT_DIR/bun-app/Dockerfile.nocompile" "$ROOT_DIR/bun-app"
   podman build -t localhost/dotnet8-jit-275:local --build-arg DOTNET_CHANNEL=8.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.jit" "$ROOT_DIR/dotnet-app"
   podman build -t localhost/dotnet8-aot-275:local --build-arg DOTNET_CHANNEL=8.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.aot" "$ROOT_DIR/dotnet-app"
   podman build -t localhost/dotnet10-jit-275:local --build-arg DOTNET_CHANNEL=10.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.jit" "$ROOT_DIR/dotnet-app"
   podman build -t localhost/dotnet10-aot-275:local --build-arg DOTNET_CHANNEL=10.0 -f "$ROOT_DIR/dotnet-app/Dockerfile.aot" "$ROOT_DIR/dotnet-app"
+  podman build -t localhost/dotnet10-blazing-275:local "$ROOT_DIR/dotnet-blazing-app"
+  podman build -t localhost/dotnet10-blazing-aot-275:local -f "$ROOT_DIR/dotnet-blazing-app/Dockerfile.aot" "$ROOT_DIR/dotnet-blazing-app"
+  podman build -t localhost/java25-blazing-275:local "$ROOT_DIR/java-blazing-app"
+  podman build -t localhost/java25-blazing-aot-275:local -f "$ROOT_DIR/java-blazing-app/Dockerfile.aot" "$ROOT_DIR/java-blazing-app"
+  podman build -t localhost/kotlin24-blazing-275:local "$ROOT_DIR/kotlin-blazing-app"
+  podman build -t localhost/kotlin24-blazing-aot-275:local -f "$ROOT_DIR/kotlin-blazing-app/Dockerfile.aot" "$ROOT_DIR/kotlin-blazing-app"
   podman build -t localhost/k6-bench-275:local "$ROOT_DIR/k6"
 fi
 
@@ -59,8 +66,8 @@ start_fresh_postgres() {
   for i in $(seq 1 60); do
     if podman exec bench-postgres pg_isready -U admin -d store >/dev/null 2>&1 && \
        podman exec bench-postgres psql -U admin -d store -tAc \
-         "SELECT count(*) FROM pg_tables WHERE tablename IN ('go_app','bun_app','dotnet8_jit_app','dotnet8_aot_app','dotnet10_jit_app','dotnet10_aot_app')" 2>/dev/null | grep -q '^6$'; then
-      echo "PostgreSQL ready (fresh RAM-backed instance with all 6 tables)."
+         "SELECT count(*) FROM pg_tables WHERE tablename IN ('go_app','rust_axum_app','bun_app','dotnet8_jit_app','dotnet8_aot_app','dotnet10_jit_app','dotnet10_aot_app','dotnet10_blazing_app','java_blazing_app','kotlin_blazing_app')" 2>/dev/null | grep -q '^10$'; then
+      echo "PostgreSQL ready (fresh RAM-backed instance with all 10 tables)."
       return 0
     fi
     sleep 0.5
@@ -97,6 +104,13 @@ start_target() {
         -v "$ROOT_DIR/k6/configs/go-config.yaml:/config.yaml:ro,Z" \
         localhost/go-app-275:local >/dev/null
       ;;
+    rust-axum)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e TOKIO_WORKER_THREADS="$cpus" \
+        -e APP_NAME=rust-axum \
+        -v "$ROOT_DIR/k6/configs/rust-axum-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/rust-axum-275:local >/dev/null
+      ;;
     bun-compile)
       podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" -w / \
         -v "$ROOT_DIR/k6/configs/bun-config.yaml:/config.yaml:ro,Z" \
@@ -130,6 +144,42 @@ start_target() {
         -e APP_NAME=dotnet10-aot \
         -v "$ROOT_DIR/k6/configs/dotnet10-aot-config.yaml:/app/config.yaml:ro,Z" \
         localhost/dotnet10-aot-275:local >/dev/null
+      ;;
+    dotnet10-blazing)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=dotnet10-blazing \
+        -v "$ROOT_DIR/k6/configs/dotnet10-blazing-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/dotnet10-blazing-275:local >/dev/null
+      ;;
+    dotnet10-blazing-aot)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=dotnet10-blazing-aot \
+        -v "$ROOT_DIR/k6/configs/dotnet10-blazing-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/dotnet10-blazing-aot-275:local >/dev/null
+      ;;
+    java25-blazing)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=java25-blazing \
+        -v "$ROOT_DIR/k6/configs/java-blazing-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/java25-blazing-275:local >/dev/null
+      ;;
+    java25-blazing-aot)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=java25-blazing-aot \
+        -v "$ROOT_DIR/k6/configs/java-blazing-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/java25-blazing-aot-275:local >/dev/null
+      ;;
+    kotlin24-blazing)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=kotlin24-blazing \
+        -v "$ROOT_DIR/k6/configs/kotlin-blazing-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/kotlin24-blazing-275:local >/dev/null
+      ;;
+    kotlin24-blazing-aot)
+      podman run -d --name "$cname" --network "$NETWORK" --cpus="$cpus" --memory="$MEMORY_LIMIT" \
+        -e APP_NAME=kotlin24-blazing-aot \
+        -v "$ROOT_DIR/k6/configs/kotlin-blazing-config.yaml:/app/config.yaml:ro,Z" \
+        localhost/kotlin24-blazing-aot-275:local >/dev/null
       ;;
     *)
       echo "Unknown target: $target" >&2

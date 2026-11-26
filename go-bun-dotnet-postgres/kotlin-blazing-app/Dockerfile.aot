@@ -1,0 +1,111 @@
+FROM docker.io/library/maven:3.9-eclipse-temurin-25 AS build-jar
+WORKDIR /src
+
+COPY pom.xml ./
+RUN mvn -B -q dependency:resolve
+
+COPY src ./src
+RUN mvn -B -q package -DskipTests
+
+FROM container-registry.oracle.com/graalvm/native-image:25 AS build-native
+WORKDIR /build
+
+COPY --from=build-jar /src/target/kotlin-blazing-app-1.0.0.jar /build/app.jar
+COPY --from=build-jar /src/target/lib /build/lib
+COPY config.yaml /build/config.yaml
+
+# Stage 1: Build PGO-instrumented native image
+RUN native-image \
+    --pgo-instrument \
+    -O2 \
+    -march=x86-64-v2 \
+    --no-fallback \
+    --gc=serial \
+    -R:MinHeapSize=64m \
+    -R:MaxHeapSize=256m \
+    -Dvertx.disableMetrics=true \
+    -Dvertx.disableH2c=true \
+    -Dvertx.disableWebsockets=true \
+    -Dvertx.disableHttpHeadersValidation=true \
+    -Dio.netty.buffer.checkBounds=false \
+    -Dio.netty.buffer.checkAccessible=false \
+    -Dio.netty.leakDetection.level=disabled \
+    -H:+UnlockExperimentalVMOptions \
+    -H:+SharedArenaSupport \
+    -H:IncludeResources='META-INF/native/.*\.so$' \
+    -H:IncludeResources='META-INF/services/.*' \
+    -cp "/build/app.jar:/build/lib/*" \
+    -o /build/kotlin-aot-instrumented \
+    app.MainKt
+
+# Stage 2: Collect runtime PGO profile via real HTTP/1.1 keep-alive traffic
+RUN printf '%s\n' \
+'import java.io.*; import java.net.*;' \
+'public class Warmup {' \
+'  public static void main(String[] args) throws Exception {' \
+'    for (int w = 0; w < 50; w++) {' \
+'      try (Socket s = new Socket("127.0.0.1", 8080)) { break; } catch (Exception e) { Thread.sleep(100); }' \
+'    }' \
+'    byte[] getReq = "GET /api/users HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n".getBytes();' \
+'    byte[] hzReq = "GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n".getBytes();' \
+'    Thread[] ts = new Thread[8];' \
+'    for (int t = 0; t < ts.length; t++) {' \
+'      ts[t] = new Thread(() -> {' \
+'        try (Socket s = new Socket("127.0.0.1", 8080)) {' \
+'          s.setTcpNoDelay(true);' \
+'          OutputStream out = s.getOutputStream(); InputStream in = s.getInputStream();' \
+'          byte[] buf = new byte[4096];' \
+'          for (int i = 0; i < 6000; i++) {' \
+'            out.write(getReq); out.flush();' \
+'            int n; boolean done = false;' \
+'            while (!done && (n = in.read(buf)) > 0) { for (int k = 0; k < n; k++) if (buf[k] == 93) done = true; }' \
+'          }' \
+'          for (int i = 0; i < 200; i++) {' \
+'            out.write(hzReq); out.flush(); in.read(buf);' \
+'          }' \
+'        } catch (Exception e) { e.printStackTrace(); }' \
+'      });' \
+'      ts[t].start();' \
+'    }' \
+'    for (Thread t : ts) t.join();' \
+'  }' \
+'}' > /build/Warmup.java; \
+    /build/kotlin-aot-instrumented -XX:ProfilesDumpFile=/build/default.iprof & \
+    APP_PID=$!; \
+    java /build/Warmup.java; \
+    kill -TERM $APP_PID; wait $APP_PID || true; \
+    test -s /build/default.iprof && ls -lh /build/default.iprof
+
+# Stage 3: Build final PGO-optimized -O3 native image
+RUN native-image \
+    --pgo=/build/default.iprof \
+    -O3 \
+    -march=x86-64-v2 \
+    --no-fallback \
+    --gc=serial \
+    -R:MinHeapSize=64m \
+    -R:MaxHeapSize=256m \
+    -Dvertx.disableMetrics=true \
+    -Dvertx.disableH2c=true \
+    -Dvertx.disableWebsockets=true \
+    -Dvertx.disableHttpHeadersValidation=true \
+    -Dio.netty.buffer.checkBounds=false \
+    -Dio.netty.buffer.checkAccessible=false \
+    -Dio.netty.leakDetection.level=disabled \
+    -H:+UnlockExperimentalVMOptions \
+    -H:+SharedArenaSupport \
+    -H:IncludeResources='META-INF/native/.*\.so$' \
+    -H:IncludeResources='META-INF/services/.*' \
+    -cp "/build/app.jar:/build/lib/*" \
+    -o /build/kotlin-blazing-app \
+    app.MainKt
+
+FROM gcr.io/distroless/cc-debian13
+WORKDIR /app
+
+COPY --from=build-native /lib64/libz.so.1 /lib/x86_64-linux-gnu/libz.so.1
+COPY --from=build-native /build/kotlin-blazing-app /app/kotlin-blazing-app
+COPY config.yaml /app/config.yaml
+
+EXPOSE 8080
+ENTRYPOINT ["/app/kotlin-blazing-app"]

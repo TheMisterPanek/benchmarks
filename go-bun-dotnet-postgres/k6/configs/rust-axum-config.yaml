@@ -1,0 +1,8 @@
+---
+appPort: 8080
+db:
+  user: rust_axum_app
+  password: devops123
+  host: postgres
+  database: store
+  maxConnections: 100
